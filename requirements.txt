@@ -1,3 +1,4 @@
 agno
 streamlit
 supabase
+google-genai
