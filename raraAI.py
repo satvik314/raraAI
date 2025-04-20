@@ -1,18 +1,41 @@
-from tasksaver import tasksaver_agent, TaskDetails, format_datetime_readable
+from tasksaver import process_task, format_datetime_readable
+import sys
+import os
 
+# There are multiple ways to enable test mode:
+# 1. Command line argument: python3 raraAI.py --test
+# 2. Environment variable: export RARA_TEST_MODE=1 (then run python3 raraAI.py)
+# 3. Directly set the variable below
 
-task_phrase = "Create slides and videos for Module 6 for the Gen AI course"
-response = tasksaver_agent.run(task_phrase)
+# Set to True to always use test mode, False to always use production mode
+# or None to determine from command line args or environment variables
+OVERRIDE_TEST_MODE = None
+# OVERRIDE_TEST_MODE = False
 
-if isinstance(response.content, TaskDetails):
-    print("Task saved successfully!")
-    task_data = response.content.model_dump() 
-    print(f"  Description: {task_data['task_description']}")
-    print(f"  Category: {task_data['category']}")
-    print(f"  Tags: {', '.join(task_data['tags']) if task_data['tags'] else 'None'}")
-    # Format the timestamp before printing
-    formatted_time = format_datetime_readable(task_data['timestamp'])
-    print(f"  Timestamp: {formatted_time}")
-else:
-    print("Error: Agent did not return the expected TaskDetails structure.")
-    print("Raw response:", response.content)
+# Check if test mode is enabled
+test_mode = OVERRIDE_TEST_MODE if OVERRIDE_TEST_MODE is not None else (
+    '--test' in sys.argv or 
+    os.getenv('RARA_TEST_MODE') == '1'
+)
+
+# Example task
+# task_phrase = "Create a Twitter post on Gen AI Course starting on May 3rd. It should be done today."
+task_phrase = "Create a consulting proposal for Scaler by Thursday. "
+
+# Process the task and save it to Supabase
+# If running with --test flag, it will save to the tasks_test table
+# Otherwise, it will save to the production tasks table
+print(f"Running in {'TEST' if test_mode else 'PRODUCTION'} mode")
+task = process_task(task_phrase, test_mode=test_mode)
+
+# The task is now saved to the Supabase database in either:
+# - 'tasks_test' table if test_mode=True
+# - 'tasks' table if test_mode=False
+#
+# Sample output in the database will be:
+# task_description='Create a LinkedIn post on Gen AI Course starting on May 3rd. It should be done today.'
+# category='Content_Creation'
+# timestamp=datetime.datetime(2025, 4, 20, 19, 13, 50, 123456, tzinfo=TzInfo(UTC))
+# tags=['LinkedIn', 'Gen AI Course']
+# deadline='2025-04-20'
+

@@ -1,14 +1,21 @@
 from datetime import datetime 
-from typing import List
+from typing import List, Optional
 from zoneinfo import ZoneInfo
+import os
 
 from agno.agent import Agent, RunResponse  
 from agno.models.google import Gemini
 from pydantic import BaseModel, Field, field_validator
 from rich.pretty import pprint  
 from dotenv import load_dotenv
+import supabase
 
 load_dotenv()
+
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
+os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
+
 
 task_categories = {
     # ── Core revenue engines ─────────────────────────────────────────────
@@ -77,12 +84,56 @@ class TaskDetails(BaseModel):
     deadline: str = Field(
         description="The deadline date in YYYY-MM-DD format (e.g., '2025-04-25') or 'none' if no deadline exists."
     )
+    # Remove the id field from the model since it's causing issues with Gemini
 
     @field_validator('category')
     def category_must_be_in_list(cls, v):
         if v not in task_categories:
             raise ValueError(f"Category '{v}' is not a valid category. Choose from: {list(task_categories.keys())}")
         return v
+        
+    def save_to_db(self, supabase_client, test_mode=False):
+        """Save the task to the Supabase database.
+        
+        Args:
+            supabase_client: The Supabase client to use for the database operation.
+            test_mode: If True, save to the tasks_test table. If False, save to the tasks table.
+        
+        Returns:
+            The ID of the inserted task if successful, None otherwise.
+        """
+        # Convert deadline 'none' to None for database
+        deadline_value = None if self.deadline.lower() == 'none' else self.deadline
+        
+        # Insert the task into the database
+        data = {
+            "task_description": self.task_description,
+            "category": self.category,
+            "timestamp": self.timestamp.isoformat(),
+            "tags": self.tags,
+            "deadline": deadline_value
+        }
+        
+        # Choose the appropriate table based on test_mode
+        table_name = 'tasks_test' if test_mode else 'tasks'
+        
+        result = supabase_client.table(table_name).insert(data).execute()
+        
+        # Return the ID if the insert was successful
+        if result.data and len(result.data) > 0:
+            task_id = result.data[0]['id']
+            return task_id
+        return None
+
+# Initialize Supabase client
+def get_supabase_client():
+    """Initialize and return a Supabase client."""
+
+    # You can also use environment variables
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    
+    return supabase.create_client(url, key)
 
 tasksaver_agent = Agent(
     model=Gemini(id="gemini-2.0-flash"), 
@@ -105,24 +156,57 @@ tasksaver_agent = Agent(
     add_datetime_to_instructions=True,
 )
 
-# task_phrase = "Prepare the slides for Generative AI Course by 25th April midnight"
-task_phrase = "Prepare the slides for Generative AI Course in 3 days."
-response = tasksaver_agent.run(task_phrase)
+def process_task(task_phrase, test_mode=False):
+    """Process a task phrase and save it to the Supabase database.
+    
+    Args:
+        task_phrase: The task phrase to process.
+        test_mode: If True, save to the tasks_test table. If False, save to the tasks table.
+    
+    Returns:
+        The processed task details if successful, None otherwise.
+    """
+    response = tasksaver_agent.run(task_phrase)
+    
+    if isinstance(response.content, TaskDetails):
+        task_data = response.content.model_dump()
+        
+        # Print task details
+        print("Task processed successfully!")
+        print(f"  Description: {task_data['task_description']}")
+        print(f"  Category: {task_data['category']}")
+        print(f"  Tags: {', '.join(task_data['tags']) if task_data['tags'] else 'None'}")
+        
+        # Format the deadline date if it exists and is not 'none'
+        formatted_deadline = format_date_readable(task_data['deadline'])
+        print(f"  Deadline: {formatted_deadline}")
+        
+        formatted_time = format_datetime_readable(task_data['timestamp'])
+        print(f"  Timestamp: {formatted_time}")
+        
+        # Save to Supabase
+        try:
+            supabase_client = get_supabase_client()
+            task_id = response.content.save_to_db(supabase_client, test_mode=test_mode)
+            
+            # Determine which table was used
+            table_name = 'tasks_test' if test_mode else 'tasks'
+            
+            if task_id:
+                print(f"  \u2705 Task saved to {table_name} with ID: {task_id}")
+            else:
+                print(f"  \u274c Failed to save task to {table_name}")
+        except Exception as e:
+            print(f"  \u274c Error saving to database: {str(e)}")
+        
+        return response.content
+    else:
+        print("Error: Agent did not return the expected TaskDetails structure.")
+        print("Raw response:", response.content)
+        return None
 
-if isinstance(response.content, TaskDetails):
-    print("Task saved successfully!")
-    task_data = response.content.model_dump()
-    
-    print(f"  Description: {task_data['task_description']}")
-    print(f"  Category: {task_data['category']}")
-    print(f"  Tags: {', '.join(task_data['tags']) if task_data['tags'] else 'None'}")
-    
-    # Format the deadline date if it exists and is not 'none'
-    formatted_deadline = format_date_readable(task_data['deadline'])
-    print(f"  Deadline: {formatted_deadline}")
-    
-    formatted_time = format_datetime_readable(task_data['timestamp'])
-    print(f"  Timestamp: {formatted_time}")
-else:
-    print("Error: Agent did not return the expected TaskDetails structure.")
-    print("Raw response:", response.content)
+# # Example usage
+# if __name__ == "__main__":
+#     # task_phrase = "Prepare the slides for Generative AI Course by 25th April midnight"
+#     task_phrase = "Prepare the slides for Generative AI Course in 3 days."
+#     task = process_task(task_phrase)
