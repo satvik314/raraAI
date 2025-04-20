@@ -2,6 +2,13 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+
+# Set environment variables from Streamlit secrets before importing tasksaver
+os.environ["SUPABASE_URL"] = st.secrets["SUPABASE_URL"]
+os.environ["SUPABASE_KEY"] = st.secrets["SUPABASE_KEY"]
+os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+
+# Now import from tasksaver after setting environment variables
 from tasksaver import process_task, get_supabase_client, format_date_readable
 
 # Set page config
