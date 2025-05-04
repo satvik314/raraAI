@@ -2,3 +2,4 @@ agno
 streamlit
 supabase
 google-genai
+mcp

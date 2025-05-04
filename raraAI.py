@@ -20,7 +20,7 @@ test_mode = OVERRIDE_TEST_MODE if OVERRIDE_TEST_MODE is not None else (
 
 # Example task
 # task_phrase = "Create a Twitter post on Gen AI Course starting on May 3rd. It should be done today."
-task_phrase = "Create a consulting proposal for Scaler by Thursday. "
+task_phrase = "Create a consulting proposal for SUTRA by Thursday. "
 
 # Process the task and save it to Supabase
 # If running with --test flag, it will save to the tasks_test table
